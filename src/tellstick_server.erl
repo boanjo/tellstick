@@ -19,8 +19,9 @@ init([]) ->
     ets:new(temperature_table, [named_table, set]),
     ets:new(device_table, [named_table, set, {keypos, #device.id}, public]),
 
+    PrivDir = code:priv_dir(tellstick),
     SharedLib = "tellstick_drv",
-    case erl_ddll:load_driver("/home/pi/repos/tellstick/priv/", SharedLib) of
+    case erl_ddll:load_driver(PrivDir, SharedLib) of
 	ok -> ok;
 	{error, already_loaded} -> ok;
 	_ -> exit({error, could_not_load_driver})
