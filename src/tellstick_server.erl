@@ -1,13 +1,15 @@
 -module(tellstick_server).
 -behaviour(gen_server).
 
+-include("../include/tellstick.hrl").
 
--export([start_link/0, say_hello/0, is_wanted/1, send_to_port/1, print_all/1]).
+-export([start_link/0, send_to_port/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3, get_device/2, get_all_devices/0,get_all_temperatures/0,get_all_humidities/0]).
--export([get_temperature/1, get_humidity/1, device/2]).
+         terminate/2, code_change/3, add_or_get_device/2]).
+-export([get_all_devices/0,get_all_temperatures/0,get_all_humidities/0]).
+-export([get_device/1, get_humidity/1,get_temperature/1]).
+-export([device/2]).
 -record(state, {port}).
--record(device, {id, name, state, value, last_state_change_time}).
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -15,8 +17,8 @@ init([]) ->
 
     process_flag(trap_exit, true),
 
-    ets:new(humidity_table, [named_table, set]),
-    ets:new(temperature_table, [named_table, set]),
+    ets:new(humidity_table, [named_table, set, {keypos, #humidity.id}, public]),
+    ets:new(temperature_table, [named_table, set, {keypos, #temperature.id}, public]),
     ets:new(device_table, [named_table, set, {keypos, #device.id}, public]),
 
     PrivDir = code:priv_dir(tellstick),
@@ -35,9 +37,6 @@ init([]) ->
     Port = open_port({spawn, SharedLib}, []),
     {ok, #state{port=Port}}.
 
-say_hello() ->
-    
-    gen_server:call(?MODULE, hello).
 
 get_next(_Table, '$end_of_table', Acc) ->
     Acc;
@@ -60,26 +59,28 @@ get_all_humidities() ->
     First = ets:first(Table),
     get_next(Table, First, []).
 
-get_temperature(out) ->
-    [Val] = ets:lookup(temperature_table, 215), 
-    Val;
-get_temperature(in) ->
-    [Val] = ets:lookup(temperature_table, 135), 
-    Val.
+lookup(Table, Id) ->
+    Val = ets:lookup(Table, Id),
+    case Val of
+	[] -> not_found;
+	List -> [Ret] = List, 
+		Ret
+    end.
+    
 
-get_humidity(out) ->
-    [Val] = ets:lookup(humidity_table, 215), 
-    Val;
-get_humidity(in) ->
-    [Val] = ets:lookup(humidity_table, 135), 
-    Val.
+get_device(Id) ->
+    lookup(device_table, Id).
+
+get_temperature(Id) ->
+    lookup(temperature_table, Id).
+
+get_humidity(Id) ->
+    lookup(humidity_table, Id).
 
 device(Id, on) ->
     send_to_port([1, Id]);
 device(Id, off) ->
-    send_to_port([1, Id]).
-
-
+    send_to_port([2, Id]).
 
 send_to_port(Msg) ->
     gen_server:call(?MODULE, {send, Msg}).
@@ -103,17 +104,8 @@ str_to_float(Str) ->
     end.
 
 
-is_wanted(Id) ->
-    case Id of
-	215 ->
-	    ok;
-	135 ->
-	    ok;
-	_ ->
-	    nok
-    end.
 
-get_device(Table, Key) when is_integer(Key) ->
+add_or_get_device(Table, Key) when is_integer(Key) ->
     case ets:lookup(Table, Key) of
 	[] ->
 	    Val=#device{id=Key},
@@ -126,29 +118,10 @@ get_device(Table, Key) when is_integer(Key) ->
     [Ret] = ets:lookup(Table, Key),
     Ret.
 			      
-			      
-
-print_next(_Table, '$end_of_table') ->
-    ok;
-print_next(Table, Prev) ->
-    [{Id, Val, Time}] = ets:lookup(Table, Prev),
-    io:format("~p: ~p ~p ~n", [Id, Val, Time]),
-    print_next(Table, ets:next(Table, Prev)).
-
-print_all(Table) ->
-    First = ets:first(Table),
-    print_next(Table, First).
-
 %% callbacks
 
-handle_call(hello, _From, State) ->
-    
-    io:format("Hello from server!~n", []),
-    {reply, ok, State};
-
 handle_call({send, Msg}, _From, #state{port = Port} = State) ->
-    
-    io:format("Send to port!~n", []),
+  %%  io:format("Send ~p to port!~n", [Msg]),
     Port ! {self(), {command, Msg}},
     {reply, ok, State};
 
@@ -167,9 +140,15 @@ handle_info({sensor_event, Id, DataType, Value}, State) ->
 
     case DataType of
 	1 ->
-	    ets:insert(temperature_table, {Id, str_to_float(Value), erlang:now()});
+	    ets:insert(temperature_table, 
+		       #temperature{id=Id, 
+				    value=str_to_float(Value), 
+				    last_update_time=erlang:now()});
 	2 ->
-	    ets:insert(humidity_table, {Id, str_to_float(Value), erlang:now()});
+	    ets:insert(humidity_table, 
+		       #humidity{id=Id, 
+				 value=str_to_float(Value), 
+				 last_update_time=erlang:now()});
 	_ ->
 	    ok
     end,
@@ -181,13 +160,14 @@ handle_info({device_change, Id, Method, _Data}, State) ->
     {noreply, State};    
 
 handle_info({device_event, Id, LastSentCommand, _Data}, State) ->
-    Prev = get_device(device_table, Id),
-    New = Prev#device{state=LastSentCommand, last_state_change_time=erlang:now()},
+    Prev = add_or_get_device(device_table, Id),
+    New = Prev#device{state=LastSentCommand, 
+		      last_state_change_time=erlang:now()},
     ets:insert(device_table, New),
     {noreply, State};    
 
 handle_info({device_name, Id, _NameLength, Name}, State) ->
-    Prev = get_device(device_table, Id),
+    Prev = add_or_get_device(device_table, Id),
     ets:insert(device_table, Prev#device{name=Name}),
     {noreply, State};    
 
