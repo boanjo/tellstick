@@ -21,8 +21,10 @@ init([]) ->
     ets:new(temperature_table, [named_table, set, {keypos, #temperature.id}, public]),
     ets:new(device_table, [named_table, set, {keypos, #device.id}, public]),
 
-    PrivDir = code:priv_dir(tellstick),
+    %%PrivDir = code:priv_dir(tellstick),
+    PrivDir = priv_dir(?MODULE),
     SharedLib = "tellstick_drv",
+
     case erl_ddll:load_driver(PrivDir, SharedLib) of
 	ok -> ok;
 	{error, already_loaded} -> ok;
@@ -33,10 +35,13 @@ init([]) ->
     
     io:format("Startig ~p pid ~p~n ", [?MODULE, Self]),
 
-%%    register(tellstick_port, Self),
     Port = open_port({spawn, SharedLib}, []),
     {ok, #state{port=Port}}.
 
+
+priv_dir(Mod) ->
+    Ebin = filename:dirname(code:which(Mod)),
+        filename:join(filename:dirname(Ebin), "priv").
 
 get_next(_Table, '$end_of_table', Acc) ->
     Acc;
