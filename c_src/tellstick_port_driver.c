@@ -184,6 +184,30 @@ static void tellstick_drv_output(ErlDrvData handle, char *buff,
 	erl_drv_output_term(driver_mk_port(handlePtr->port), spec, sizeof(spec) / sizeof(spec[0]));   
 	
       }
+      if (dataTypes & TELLSTICK_RAINRATE) {
+	tdSensorValue(protocol, model, sensorId, TELLSTICK_RAINRATE, value, DATA_LENGTH, (int *)&timestamp);
+	ErlDriverTerm spec[] = {
+	  ERL_DRV_ATOM, driver_mk_atom("sensor_event"),
+	  ERL_DRV_INT, sensorId,
+	  ERL_DRV_INT, 4,
+	  ERL_DRV_STRING, (ErlDriverTerm)value, 10,
+	  ERL_DRV_TUPLE, 4,
+	};
+	erl_drv_output_term(driver_mk_port(handlePtr->port), spec, sizeof(spec) / sizeof(spec[0]));   
+	
+      }
+      if (dataTypes & TELLSTICK_RAINTOTAL) {
+	tdSensorValue(protocol, model, sensorId, TELLSTICK_RAINTOTAL, value, DATA_LENGTH, (int *)&timestamp);
+	ErlDriverTerm spec[] = {
+	  ERL_DRV_ATOM, driver_mk_atom("sensor_event"),
+	  ERL_DRV_INT, sensorId,
+	  ERL_DRV_INT, 8,
+	  ERL_DRV_STRING, (ErlDriverTerm)value, 10,
+	  ERL_DRV_TUPLE, 4,
+	};
+	erl_drv_output_term(driver_mk_port(handlePtr->port), spec, sizeof(spec) / sizeof(spec[0]));   
+	
+      }
       
     }
   } else if(fn == 6) {

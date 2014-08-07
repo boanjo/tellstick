@@ -6,8 +6,8 @@
 -export([start_link/0, send_to_port/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3, add_or_get_device/2]).
--export([get_all_devices/0,get_all_temperatures/0,get_all_humidities/0]).
--export([get_device/1, get_humidity/1,get_temperature/1]).
+-export([get_all_devices/0,get_all_temperatures/0,get_all_humidities/0, get_all_rainrates/0, get_all_raintotals/0]).
+-export([get_device/1, get_humidity/1,get_temperature/1, get_rainrate/1, get_raintotal/1]).
 -export([device/2]).
 -record(state, {port}).
 start_link() ->
@@ -18,6 +18,8 @@ init([]) ->
     process_flag(trap_exit, true),
 
     ets:new(humidity_table, [named_table, set, {keypos, #humidity.id}, public]),
+    ets:new(rainrate_table, [named_table, set, {keypos, #rainrate.id}, public]),
+    ets:new(raintotal_table, [named_table, set, {keypos, #raintotal.id}, public]),
     ets:new(temperature_table, [named_table, set, {keypos, #temperature.id}, public]),
     ets:new(device_table, [named_table, set, {keypos, #device.id}, public]),
 
@@ -64,6 +66,16 @@ get_all_humidities() ->
     First = ets:first(Table),
     get_next(Table, First, []).
 
+get_all_rainrates() ->
+    Table = rainrate_table,
+    First = ets:first(Table),
+    get_next(Table, First, []).
+
+get_all_raintotals() ->
+    Table = raintotal_table,
+    First = ets:first(Table),
+    get_next(Table, First, []).
+
 lookup(Table, Id) ->
     Val = ets:lookup(Table, Id),
     case Val of
@@ -81,6 +93,12 @@ get_temperature(Id) ->
 
 get_humidity(Id) ->
     lookup(humidity_table, Id).
+
+get_rainrate(Id) ->
+    lookup(rainrate_table, Id).
+
+get_raintotal(Id) ->
+    lookup(raintotal_table, Id).
 
 device(Id, on) ->
     send_to_port([1, Id]);
@@ -152,6 +170,16 @@ handle_info({sensor_event, Id, DataType, Value}, State) ->
 	2 ->
 	    ets:insert(humidity_table, 
 		       #humidity{id=Id, 
+				 value=str_to_float(Value), 
+				 last_update_time=erlang:now()});
+	4 ->
+	    ets:insert(rainrate_table, 
+		       #rainrate{id=Id, 
+				 value=str_to_float(Value), 
+				 last_update_time=erlang:now()});
+	8 ->
+	    ets:insert(raintotal_table, 
+		       #raintotal{id=Id, 
 				 value=str_to_float(Value), 
 				 last_update_time=erlang:now()});
 	_ ->
